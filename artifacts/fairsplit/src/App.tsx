@@ -157,10 +157,15 @@ function App() {
       maxSupportedTransactionVersion: 0,
     });
     if (!transaction) throw new Error('No confirmed transaction with that signature was found on Devnet.');
-    const fee = transaction.meta?.fee ?? 0;
-    const feeSol = (Number(fee) / LAMPORTS_PER_SOL).toFixed(9).replace(/0+$/, '').replace(/\.$/, '') || '0';
+  const fee = transaction.meta?.fee;
+  const feeSol = fee === undefined ? null : (Number(fee) / LAMPORTS_PER_SOL).toFixed(9).replace(/0+$/, '').replace(/\.$/, '') || '0';
+  const blockTime = typeof transaction.blockTime === 'number' && Number.isFinite(transaction.blockTime)
+    ? ` at ${new Date(transaction.blockTime * 1000).toISOString()}`
+    : '';
+  const confirmedLocation = `slot ${transaction.slot}${blockTime}`;
+  const feeSummary = feeSol === null ? 'The RPC response did not include fee metadata.' : `The network fee was ${feeSol} SOL.`;
     if (transaction.meta?.err) {
-      return `This transaction was included on Devnet, but it failed. The network fee was ${feeSol} SOL. A failed transaction is not a successful payment, even though it has a public signature. Check its details in Solana Explorer before updating any records.`;
+    return `This transaction was included on Devnet in ${confirmedLocation}, but it failed. ${feeSummary} A failed transaction is not a successful payment, even though it has a public signature. Check its details in Solana Explorer before updating any records.`;
     }
     const transferInstruction = transaction.transaction.message.instructions.find(instruction => {
       if (!('parsed' in instruction) || instruction.program !== 'system' || !instruction.parsed || typeof instruction.parsed !== 'object') return false;
@@ -169,12 +174,12 @@ function App() {
     if ('parsed' in (transferInstruction ?? {})) {
       const parsed = (transferInstruction as { parsed: { info?: { source?: string; destination?: string; lamports?: number } } }).parsed;
       const info = parsed.info;
-      if (info?.source && info.destination && Number.isFinite(Number(info.lamports))) {
+      if (info?.source && info.destination && Number.isSafeInteger(Number(info.lamports))) {
         const amount = (Number(info.lamports) / LAMPORTS_PER_SOL).toFixed(9).replace(/0+$/, '').replace(/\.$/, '') || '0';
-        return `This confirmed Devnet transaction sent ${amount} SOL from ${shortKey(info.source)} to ${shortKey(info.destination)}. The network fee was ${feeSol} SOL. The signature is the public receipt; it confirms what happened on-chain, but it does not establish a USD exchange rate or prove that a separate expense ledger was correct.`;
+        return `This confirmed Devnet transaction in ${confirmedLocation} sent ${amount} SOL from ${shortKey(info.source)} to ${shortKey(info.destination)}. ${feeSummary} The signature is the public receipt; it confirms what happened on-chain, but it does not establish a USD exchange rate or prove that a separate expense ledger was correct.`;
       }
     }
-    return `This transaction is confirmed on Devnet. It used ${transaction.transaction.message.instructions.length} instruction(s), and its network fee was ${feeSol} SOL. The signature identifies the public record. This lookup could not find a basic SOL transfer to summarize, so review the full instruction details in Solana Explorer.`;
+    return `This transaction is confirmed on Devnet in ${confirmedLocation}. It used ${transaction.transaction.message.instructions.length} instruction(s). ${feeSummary} The signature identifies the public record. This lookup could not find a basic SOL transfer to summarize, so review the full instruction details in Solana Explorer.`;
   }
   async function requestAirdrop() {
     if (!walletAddress || airdropBusy) return;
@@ -394,7 +399,7 @@ function Dashboard({ groups, activeGroup, setActiveGroup, totalSpent, balances, 
   return <div className="fade-in">
     <PageHeading eyebrow="Your money, in the open" title="Good to see you." description="Every shared cost, clearly accounted for. On-chain payments stay in your hands." action={<button onClick={onAddExpense} disabled={!activeGroup?.members.length} className="flex items-center justify-center gap-2 rounded-xl bg-[#7158d1] px-4 py-3 text-[12px] font-bold text-white shadow-[0_6px_15px_#7258d32b] hover:bg-[#6047bf] disabled:cursor-not-allowed disabled:opacity-50"><Plus size={16} />Add expense</button>} />
     <div className="mb-6 grid gap-4 sm:grid-cols-3">
-      <Metric label="Total shared spend" value={usd(totalSpent)} icon={<Banknote size={17} />} note="Across all your groups" tint="lavender" />
+      <Metric label="Total shared spend" value={usd(totalSpent)} icon={<Banknote size={17} />} note={groups.some(group => group.demo) ? 'Includes starter demonstration data' : 'Across all your groups'} tint="lavender" />
       <Metric label="Your group balances" value={activeGroup ? (netTotal ? usd(netTotal) : '$0.00') : '$0.00'} icon={<ArrowLeftRight size={17} />} note={netTotal ? 'Open balances to settle' : 'No open balances right now'} tint="mint" />
       <Metric label="Groups" value={String(groups.length).padStart(2, '0')} icon={<Users size={17} />} note={`${groups.reduce((n,g) => n + g.members.length, 0)} people in your circles`} tint="peach" />
     </div>
@@ -415,7 +420,7 @@ function Dashboard({ groups, activeGroup, setActiveGroup, totalSpent, balances, 
       </Card>
       <Card className="p-5">
         <div className="mb-4 flex items-start justify-between"><div><h2 className="display text-[18px] font-bold">Recent expenses</h2><p className="mt-1 text-[10px] text-[#928da0]">The latest costs in your circles.</p></div><span className="rounded-lg bg-[#f3f0fb] px-2 py-1 text-[10px] font-bold text-[#7964cb]">{allExpenses.length} total</span></div>
-        {allExpenses.length === 0 ? <EmptyState compact title="No expenses yet" copy="Add a shared cost to see everyone’s exact share." action={<button onClick={onAddExpense} disabled={!activeGroup?.members.length} className="mt-1 text-[10px] font-bold text-[#7158d1] disabled:opacity-50">Add your first expense</button>} /> : <div className="space-y-1">{allExpenses.slice(0, 5).map(expense => { const group = groups.find(g => g.id === expense.groupId); const payer = group?.members.find(m => m.id === expense.payerId); return <div key={expense.id} className="group flex items-center gap-3 rounded-xl px-2 py-3 hover:bg-[#faf9fc]"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#f0eef8] text-[#7864c8]"><Banknote size={16} /></span><div className="min-w-0 flex-1"><div className="truncate text-[11px] font-bold text-[#484358]">{expense.description}</div><div className="mt-0.5 truncate text-[9px] text-[#9691a3]">{payer?.name ?? 'Member'} · {expense.groupName} · {expense.category}</div></div><div className="mono text-[11px] font-medium text-[#454055]">{usd(expense.amountCents)}</div><button onClick={() => onRemoveExpense(expense.groupId, expense.id)} aria-label={`Remove ${expense.description}`} className="ml-1 text-[#c1bdcb] opacity-0 hover:text-[#bc5b51] group-hover:opacity-100 focus:opacity-100"><Trash2 size={14} /></button></div>; })}</div>}
+        {allExpenses.length === 0 ? <EmptyState compact title="No expenses yet" copy="Add a shared cost to see everyone’s exact share." action={<button onClick={onAddExpense} disabled={!activeGroup?.members.length} className="mt-1 text-[10px] font-bold text-[#7158d1] disabled:opacity-50">Add your first expense</button>} /> : <div className="space-y-1">{allExpenses.slice(0, 5).map(expense => { const group = groups.find(g => g.id === expense.groupId); const payer = group?.members.find(m => m.id === expense.payerId); return <div key={expense.id} className="group flex items-center gap-3 rounded-xl px-2 py-3 hover:bg-[#faf9fc]"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#f0eef8] text-[#7864c8]"><Banknote size={16} /></span><div className="min-w-0 flex-1"><div className="truncate text-[11px] font-bold text-[#484358]">{expense.description}</div><div className="mt-0.5 truncate text-[9px] text-[#9691a3]">{payer?.name ?? 'Member'} · {expense.groupName}{group?.demo ? ' · DEMO' : ''} · {expense.category}</div></div><div className="mono text-[11px] font-medium text-[#454055]">{usd(expense.amountCents)}</div><button onClick={() => onRemoveExpense(expense.groupId, expense.id)} aria-label={`Remove ${expense.description}`} className="ml-1 text-[#c1bdcb] opacity-0 hover:text-[#bc5b51] group-hover:opacity-100 focus:opacity-100"><Trash2 size={14} /></button></div>; })}</div>}
         {allExpenses.length > 0 && <Link href="/groups" className="mt-3 flex items-center justify-between border-t border-[#f0edf5] pt-4 text-[10px] font-bold text-[#7964cb]">Manage groups and expenses <ArrowRight size={14} /></Link>}
       </Card>
     </div>
@@ -543,8 +548,9 @@ function AssistantPage({ groups, activeGroup, balances, suggestions, onExplainTr
         <Card className="overflow-hidden">
           <div className="flex flex-col justify-between gap-3 border-b border-[#f0edf5] bg-[#fbfaff] p-5 sm:flex-row sm:items-center">
             <div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-[14px] bg-[#ece7fb] text-[#755dc9]"><Bot size={19} /></span><div><div className="text-[12px] font-bold text-[#484257]">Expense AI assistant</div><div className="mt-1 text-[10px] text-[#9590a2]">Local arithmetic · no wallet · no RPC</div></div></div>
-            <select aria-label="Expense assistant group" value={group?.id ?? ''} onChange={e => { setGroupId(e.target.value); setResult(null); setSplitAnswer(''); }} className="max-w-[210px] rounded-lg border border-[#e8e4ef] bg-white px-3 py-2 text-[10px] font-semibold">{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
+            <select aria-label="Expense assistant group" value={group?.id ?? ''} onChange={e => { setGroupId(e.target.value); setResult(null); setSplitAnswer(''); }} className="max-w-[210px] rounded-lg border border-[#e8e4ef] bg-white px-3 py-2 text-[10px] font-semibold">{groups.map(g => <option key={g.id} value={g.id}>{g.name}{g.demo ? ' · DEMO' : ''}</option>)}</select>
           </div>
+          {group?.demo && <div className="mx-5 mt-3 rounded-xl border border-[#e6e0f7] bg-[#f7f5ff] px-3 py-2.5 text-[10px] leading-relaxed text-[#6e6394]"><strong>Demonstration data:</strong> this starter group contains illustrative expenses and balances. They are not personal records or real payments.</div>}
           <div className="p-5">
             <form onSubmit={askSplitQuestion}>
               <label htmlFor="expense-question" className="mb-2 block text-[11px] font-bold text-[#5e586f]">Ask a normal question about the split</label>
@@ -584,6 +590,7 @@ function AssistantPage({ groups, activeGroup, balances, suggestions, onExplainTr
         </Card>
         <Card className="p-5">
           <div className="mb-4 flex items-center justify-between"><div><h2 className="display text-[18px] font-bold">Fair settlement plan</h2><p className="mt-1 text-[10px] text-[#928da0]">Greedy matching minimizes the number of suggested transfers.</p></div><ArrowLeftRight size={16} className="text-[#7862ca]" /></div>
+          {group?.demo && <div className="mb-3 rounded-lg bg-[#f7f5ff] px-3 py-2 text-[9px] font-semibold text-[#766b99]">Suggestions below are calculated from starter demonstration expenses.</div>}
           {!group || currentSuggestions.length === 0 ? <div className="rounded-xl bg-[#f8f7fb] px-4 py-5 text-center text-[10px] text-[#9691a3]">No payments suggested. Add a shared cost to establish balances.</div> : <div className="space-y-2">{currentSuggestions.map((s, i) => <div key={i} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#efedf4] px-4 py-3"><div className="flex items-center gap-2 text-[11px] text-[#716b80]"><span className="font-bold text-[#4e485f]">{group?.members.find(m => m.id === s.senderId)?.name}</span><ArrowRight size={13} /><span className="font-bold text-[#4e485f]">{group?.members.find(m => m.id === s.recipientId)?.name}</span></div><div className="flex items-center gap-3"><span className="mono text-[12px] font-bold text-[#504a61]">{usd(s.cents)}</span><button onClick={() => onPay(s)} className="rounded-lg bg-[#f0edfa] px-3 py-1.5 text-[9px] font-bold text-[#6d57c0]">Review payment</button></div></div>)}</div>}
           <p className="mt-3 text-[9px] leading-relaxed text-[#a09bac]">Suggestions are about shared USD ledger balances. Sending Devnet SOL is optional and requires an independent wallet transaction.</p>
         </Card>
