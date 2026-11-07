@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "FairSplit"
+description = "A Solana Devnet group-expense app for tracking shared costs, reviewing fair settlement suggestions, and learning what each payment does on-chain."
+version = "1.0.0"
+id = "artifacts/fairsplit"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 26189
+
+[services.development]
+run = "pnpm --filter @workspace/fairsplit run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/fairsplit", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/fairsplit/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "26189"
+BASE_PATH = "/"
