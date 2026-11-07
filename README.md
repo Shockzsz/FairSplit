@@ -24,7 +24,9 @@ Expense amounts are tracked in USD for familiar budgeting. The user separately e
 
 ## The assistant
 
-The assistant can turn everyday expense descriptions into editable suggestions, infer common categories, explain a split, flag likely duplicate or unusually large entries, recommend fair settlements, and explain a real transaction signature in beginner-friendly terms.
+The expense assistant answers normal split questions with local calculations—for example, four people splitting £120 equally owe £30 each. It can also draft expenses, infer common categories, flag likely duplicates or unusually large entries, and recommend fair settlements. This is local rules-based assistance, not a generative AI model, and it does not require a wallet.
+
+The separate Solana transaction explainer accepts only a Base58-encoded 64-byte signature. It validates the signature shape before querying Devnet RPC and explains only a transaction returned by the network; ordinary questions are never sent to RPC.
 
 To keep the demo free of paid AI services and API keys, the assistant uses local rules and expense data in the browser. It is not a generative AI model, and no prompt or expense information is sent to an AI provider.
 

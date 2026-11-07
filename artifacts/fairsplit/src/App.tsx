@@ -6,6 +6,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import { Route, Switch, useLocation, Router as WouterRouter, Link } from 'wouter';
 import { Connection, PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL } from '@solana/web3.js';
+import { answerSplitQuestion, isValidSolanaSignature } from '@/lib/expense-assistant';
 import {
   ArrowLeftRight, ArrowRight, Banknote, BookOpen, Bot, CircleHelp, CirclePlus, Compass,
   ExternalLink, Home, Info, Lightbulb, LoaderCircle, LockKeyhole, Menu, Plus, Settings2,
@@ -148,6 +149,9 @@ function App() {
   async function explainTransaction(signature: string) {
     const cleanSignature = signature.trim();
     if (!cleanSignature) throw new Error('Paste a Solana transaction signature first.');
+    if (!isValidSolanaSignature(cleanSignature)) {
+      throw new Error('That is not a valid Solana transaction signature. Use the Base58 signature copied from a Devnet transaction.');
+    }
     const transaction = await connection.getParsedTransaction(cleanSignature, {
       commitment: 'confirmed',
       maxSupportedTransactionVersion: 0,
@@ -498,6 +502,8 @@ function AssistantPage({ groups, activeGroup, balances, suggestions, onExplainTr
   const [groupId, setGroupId] = useState(activeGroup?.id ?? '');
   const group = groups.find(g => g.id === groupId) ?? activeGroup;
   const [query, setQuery] = useState('');
+  const [splitQuestion, setSplitQuestion] = useState('');
+  const [splitAnswer, setSplitAnswer] = useState('');
   const [result, setResult] = useState<Suggestion | null>(null);
   const [submittedText, setSubmittedText] = useState('');
   const [infoTab, setInfoTab] = useState<'concepts' | 'signatures'>('concepts');
@@ -514,19 +520,45 @@ function AssistantPage({ groups, activeGroup, balances, suggestions, onExplainTr
     if (!query.trim() || !group) return;
     setSubmittedText(query.trim()); setResult(parseExpense(query, group));
   }
+  function askSplitQuestion(e: FormEvent) {
+    e.preventDefault();
+    setSplitAnswer(answerSplitQuestion(splitQuestion, group?.members ?? []));
+  }
   async function explainSubmittedTransaction(e: FormEvent) {
     e.preventDefault();
-    setExplainingTransaction(true); setTransactionError(''); setTransactionExplanation('');
+    setTransactionError(''); setTransactionExplanation('');
+    if (!isValidSolanaSignature(signature)) {
+      setTransactionError('That is not a valid Solana transaction signature. Use the Base58 signature copied from a Devnet transaction.');
+      return;
+    }
+    setExplainingTransaction(true);
     try { setTransactionExplanation(await onExplainTransaction(signature)); }
     catch (error) { setTransactionError(error instanceof Error ? error.message : 'Could not read that Devnet transaction.'); }
     finally { setExplainingTransaction(false); }
   }
   return <div className="fade-in">
-    <PageHeading eyebrow="A practical co-pilot" title="Say it like a person." description="Draft shared expenses, understand the math, and find a fair next step. This assistant uses transparent local rules—not a generative AI model." />
+    <PageHeading eyebrow="Expense assistant · local calculations" title="Ask about a split." description="Ask a normal question about a shared cost. FairSplit calculates the split locally without a wallet or Solana RPC; no genuine AI model is configured." />
     <div className="mb-5 flex flex-col gap-5 xl:grid xl:grid-cols-[1fr_335px]">
       <div className="space-y-5">
         <Card className="overflow-hidden">
-          <div className="flex flex-col justify-between gap-3 border-b border-[#f0edf5] bg-[#fbfaff] p-5 sm:flex-row sm:items-center"><div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-[14px] bg-[#ece7fb] text-[#755dc9]"><Bot size={19} /></span><div><div className="text-[12px] font-bold text-[#484257]">Describe a shared expense</div><div className="mt-1 text-[10px] text-[#9590a2]">Local parsing · editable before saving</div></div></div><select aria-label="Assistant group" value={group?.id ?? ''} onChange={e => { setGroupId(e.target.value); setResult(null); }} className="max-w-[210px] rounded-lg border border-[#e8e4ef] bg-white px-3 py-2 text-[10px] font-semibold">{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>
+          <div className="flex flex-col justify-between gap-3 border-b border-[#f0edf5] bg-[#fbfaff] p-5 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-[14px] bg-[#ece7fb] text-[#755dc9]"><Bot size={19} /></span><div><div className="text-[12px] font-bold text-[#484257]">Expense AI assistant</div><div className="mt-1 text-[10px] text-[#9590a2]">Local arithmetic · no wallet · no RPC</div></div></div>
+            <select aria-label="Expense assistant group" value={group?.id ?? ''} onChange={e => { setGroupId(e.target.value); setResult(null); setSplitAnswer(''); }} className="max-w-[210px] rounded-lg border border-[#e8e4ef] bg-white px-3 py-2 text-[10px] font-semibold">{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
+          </div>
+          <div className="p-5">
+            <form onSubmit={askSplitQuestion}>
+              <label htmlFor="expense-question" className="mb-2 block text-[11px] font-bold text-[#5e586f]">Ask a normal question about the split</label>
+              <textarea id="expense-question" data-testid="input-expense-question" value={splitQuestion} onChange={e => setSplitQuestion(e.target.value)} rows={3} maxLength={500} placeholder="I spent £120 on dinner for four people. Sarah paid the full amount. Everyone should contribute equally." className="w-full resize-y rounded-xl border border-[#e9e5f0] bg-white p-3 text-[12px] leading-relaxed outline-none focus:border-[#b7a9e8] focus:ring-2 focus:ring-[#7158d1]/10" />
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                <p className="text-[9px] text-[#9691a3]">Uses only the question text and local group member names.</p>
+                <button data-testid="button-calculate-split" disabled={!splitQuestion.trim()} className="flex items-center gap-2 rounded-xl bg-[#7158d1] px-4 py-2.5 text-[10px] font-bold text-white hover:bg-[#6047bf] disabled:opacity-50"><Sparkles size={13} />Explain the split</button>
+              </div>
+            </form>
+            {splitAnswer && <div role="status" data-testid="text-expense-answer" className="mt-4 rounded-xl border border-[#e6e0f7] bg-[#f8f6ff] p-4 text-[11px] leading-relaxed text-[#5f5875]">{splitAnswer}<div className="mt-3 border-t border-[#e9e4f4] pt-3 text-[9px] font-semibold text-[#7968ad]">Local rules-based calculation · not genuine AI · no wallet or Solana request</div></div>}
+          </div>
+        </Card>
+        <Card className="overflow-hidden">
+          <div className="border-b border-[#f0edf5] bg-[#fbfaff] p-5"><div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-[14px] bg-[#ece7fb] text-[#755dc9]"><Banknote size={18} /></span><div><div className="text-[12px] font-bold text-[#484257]">Draft an expense</div><div className="mt-1 text-[10px] text-[#9590a2]">Separate local tool · editable before saving to the selected group</div></div></div></div>
           <div className="p-5">
             {!group || group.members.length === 0 ? <EmptyState compact title="Add members to begin" copy="Expense suggestions need a group and at least one member." /> : <>
               <form onSubmit={ask}><label htmlFor="assistant-prompt" className="mb-2 block text-[11px] font-bold text-[#5e586f]">What did the group spend?</label><div className="flex gap-2"><input id="assistant-prompt" data-testid="input-assistant-prompt" value={query} onChange={e => setQuery(e.target.value)} placeholder="We spent $42.80 on groceries, split between everyone" className="min-w-0 flex-1" /><button className="flex shrink-0 items-center gap-2 rounded-xl bg-[#7158d1] px-4 text-[11px] font-bold text-white hover:bg-[#6047bf]"><Sparkles size={14} />Suggest</button></div></form>
@@ -561,8 +593,8 @@ function AssistantPage({ groups, activeGroup, balances, suggestions, onExplainTr
           {infoTab === 'concepts' ? <div className="space-y-4 p-4"><Concept title="What is Devnet?" text="A public Solana test network. Its SOL is for testing and has no cash value. FairSplit sends transactions only to this network." /><Concept title="Why Phantom approval?" text="Your wallet holds the authority to sign. FairSplit prepares a transfer, but Phantom shows it to you before anything can be sent." /><Concept title="What stays local?" text="Groups, expense records, and confirmed settlement notes live in this browser’s localStorage. They are not uploaded to FairSplit servers." /></div> : <div className="p-4"><div className="rounded-xl bg-[#f7f5fb] p-3 text-[10px] leading-relaxed text-[#817b90]">A transaction signature is a unique identifier for a signed transaction. After Devnet confirms it, anyone can inspect its public record in a Devnet explorer. It proves the chain transaction; it does not prove a USD conversion.</div><a href="https://explorer.solana.com/?cluster=devnet" target="_blank" rel="noreferrer" className="mt-3 flex items-center gap-2 text-[10px] font-bold text-[#7158d1]">Open Solana Devnet Explorer <ExternalLink size={12} /></a></div>}
         </Card>
         <Card className="p-5">
-          <div className="mb-2 flex items-center gap-2 text-[11px] font-bold text-[#504b61]"><BookOpen size={15} className="text-[#7660ca]" />Explain a real transaction</div>
-          <p className="mb-4 text-[10px] leading-relaxed text-[#928da0]">Paste a transaction signature to look up its confirmed Devnet record. FairSplit explains basic SOL transfers in plain language.</p>
+          <div className="mb-2 flex items-center gap-2 text-[11px] font-bold text-[#504b61]"><BookOpen size={15} className="text-[#7660ca]" />Solana transaction explainer</div>
+          <p className="mb-4 text-[10px] leading-relaxed text-[#928da0]">Devnet signatures only. Ordinary questions belong in the Expense AI assistant and are never sent to Solana RPC.</p>
           <form onSubmit={explainSubmittedTransaction} className="flex flex-col gap-2 sm:flex-row">
             <input data-testid="input-transaction-signature" value={signature} onChange={e => setSignature(e.target.value)} autoComplete="off" spellCheck={false} placeholder="Paste a Solana transaction signature" className="mono min-w-0 flex-1" aria-label="Solana transaction signature" />
             <button data-testid="button-explain-transaction" disabled={explainingTransaction || !signature.trim()} className="flex items-center justify-center gap-2 rounded-xl bg-[#7158d1] px-4 py-2.5 text-[10px] font-bold text-white hover:bg-[#6047bf] disabled:opacity-50">{explainingTransaction ? <LoaderCircle size={13} className="animate-spin" /> : <Sparkles size={13} />}{explainingTransaction ? 'Looking up…' : 'Explain'}</button>

@@ -13,7 +13,7 @@ FairSplit is a client-side expense-sharing app for friends and student groups. G
 
 ## Assistant
 
-The expense helper is a **local rules-based assistant, not a generative AI model**. It extracts a typed amount, applies keyword categories, suggests an editable expense, flags similar entries and expenses at or above $500, explains equal-split cent rounding, recommends fair settlements, and looks up real confirmed Devnet transaction signatures to explain basic SOL transfers. It does not call an AI provider or send the prompt to a server. It is deliberately limited and may need user correction.
+The expense helper is a **local rules-based assistant, not a generative AI model**. Its separate expense Q&A calculates equal shares and explains who owes the payer from a normal-language question, including GBP amounts. Expense drafting also suggests categories, flags similar entries and large amounts, and recommends fair settlements. A separate transaction explainer accepts only a Base58-encoded 64-byte Solana signature before querying Devnet, then explains the returned confirmed transaction. No ordinary expense question is sent to RPC, and no AI provider or server receives prompts. Results are deliberately limited and may need user correction.
 
 ## Local data and starter group
 
